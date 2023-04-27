@@ -1,0 +1,9 @@
+torch>=1.13.0
+torchvision>=0.9
+transformers
+diffusers
+huggingface_hub
+git+https://github.com/navervision/CompoDiff.git
+transparent-background
+git+https://github.com/sberbank-ai/Real-ESRGAN.git
+gradio
