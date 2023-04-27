@@ -43,7 +43,7 @@ Through a Graphit training method, we can perform various image editing methods 
 
 ## 🚀 News
 
-- **04/27/2023** - Graphit-SD model released!
+- **04/--/2023** - Graphit-SD model released!
 
 ## 🖼️ How to run demo
 Users who have experienced to run Stable Diffusion v1.5 on their own commercial GPU can try Graphit-SD by following below steps:
