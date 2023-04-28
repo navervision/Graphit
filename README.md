@@ -43,7 +43,7 @@ Through a Graphit training method, we can perform various image editing methods 
 
 ## 🚀 News
 
-- **04/18/2023** - Graphit-SD model released!
+- **04/28/2023** - Graphit-SD model released!
 
 ## 🖼️ How to run demo
 Users who have experienced to run Stable Diffusion v1.5 on their own commercial GPU can try Graphit-SD by following below steps:
@@ -191,3 +191,21 @@ We will be publishing the Graphit paper as soon as possible. Stay tuned for upda
 ---
 
 Give Graphit a star ⭐ on GitHub and share it with your friends and colleagues. With your support, we can continue to innovate and push the boundaries of what's possible in image editing research.
+
+## License
+```
+Graphit
+Copyright 2023-present NAVER Corp.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
