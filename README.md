@@ -14,6 +14,8 @@ Official Pytorch implementation of Graphit (**Paper will be published.**)
 
 \* Corresponding author.
 
+[\[HuggingFace Space demo 🤗\]](https://huggingface.co/spaces/navervision/Graphit-SD) Thank you for HuggingFace team!!!
+
 ## ⭐ Overview
 
 **Welcome to Graphit, a novel approach to perform various image editing tasks within a single framework!**
