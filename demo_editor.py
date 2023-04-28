@@ -162,7 +162,7 @@ class GraphitPipeline(StableDiffusionInstructPix2PixPipeline):
 
         # 2. Encode input prompt
         cond_embeds = torch.cat([image_cond_embeds, negative_image_cond_embeds])
-        cond_embeds = einops.repeat(cond_embeds, 'b n d -> (b num) n d', num=num_images_per_prompt) #.to(torch_dtype)
+        cond_embeds = einops.repeat(cond_embeds, 'b n d -> (b num) n d', num=num_images_per_prompt).to(model_dict['torch_dtype']) #.to(torch_dtype)
         prompt_embeds = cond_embeds
 
         # 3. Preprocess image
