@@ -12,7 +12,7 @@ Official Pytorch implementation of Graphit (**Paper will be published.**)
 
 <sup>1</sup> NAVER Vision <sup>2</sup> NAVER AI Lab
 
-(\* Corresponding author. If you have any buisness inquries, please contact to __yoohoon.kang[at]navercorp[dot]com__)
+\* Corresponding author.
 
 ## ⭐ Overview
 
