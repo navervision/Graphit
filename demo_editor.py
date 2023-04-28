@@ -35,8 +35,6 @@ from torchvision.transforms.functional import to_pil_image, pil_to_tensor
 import PIL
 from PIL import Image, ImageOps
 
-import sys
-sys.path.append("../compodiff") # It will be deprecated
 import compodiff
 from transformers import DPTFeatureExtractor, DPTForDepthEstimation
 from transparent_background import Remover
