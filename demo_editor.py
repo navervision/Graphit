@@ -802,4 +802,4 @@ if __name__ == "__main__":
         submit_surprise_me.click(surprise_me, outputs=[text_input])
     demo.queue()
     demo.launch(server_name='0.0.0.0',
-                server_port=8800)
+                server_port=8000)
