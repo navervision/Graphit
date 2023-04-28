@@ -162,7 +162,7 @@ class GraphitPipeline(StableDiffusionInstructPix2PixPipeline):
 
         # 2. Encode input prompt
         cond_embeds = torch.cat([image_cond_embeds, negative_image_cond_embeds])
-        cond_embeds = einops.repeat(cond_embeds, 'b n d -> (b num) n d', num=num_images_per_prompt).to(torch.float16)
+        cond_embeds = einops.repeat(cond_embeds, 'b n d -> (b num) n d', num=num_images_per_prompt) #.to(torch_dtype)
         prompt_embeds = cond_embeds
 
         # 3. Preprocess image
@@ -312,38 +312,43 @@ class CustomRealESRGAN(RealESRGAN):
 
 def build_models(args):
     # Load scheduler, tokenizer and models.
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    torch_dtype = torch.float16 if 'cuda' in device else torch.float32
 
     model_path = 'navervision/Graphit-SD'
     unet = UNet2DConditionModel.from_pretrained(
-        model_path, torch_dtype=torch.float16,
+        model_path, torch_dtype=torch_dtype,
     )
 
     vae_name = 'stabilityai/sd-vae-ft-ema'
-    vae = AutoencoderKL.from_pretrained(vae_name, torch_dtype=torch.float16)
+    vae = AutoencoderKL.from_pretrained(vae_name, torch_dtype=torch_dtype)
 
     model_name = 'timbrooks/instruct-pix2pix'
-    pipe = GraphitPipeline.from_pretrained(model_name, torch_dtype=torch.float16, safety_checker=None,
+    pipe = GraphitPipeline.from_pretrained(model_name, torch_dtype=torch_dtype, safety_checker=None,
             unet = unet,
             vae = vae,
             )
-    pipe = pipe.to('cuda:0')
+    pipe = pipe.to(device)
 
     ## load CompoDiff
     compodiff_model, clip_model, clip_preprocess, clip_tokenizer = compodiff.build_model()
-    compodiff_model, clip_model = compodiff_model.to('cuda:0'), clip_model.to('cuda:0')
+    compodiff_model, clip_model = compodiff_model.to(device), clip_model.to(device)
+
+    if device != 'cpu':
+        clip_model = clip_model.half()
 
     ## load third-party models
     model_name = 'Intel/dpt-large'
     depth_preprocess = DPTFeatureExtractor.from_pretrained(model_name)
-    depth_predictor = DPTForDepthEstimation.from_pretrained(model_name, torch_dtype=torch.float16)
-    depth_predictor = depth_predictor.to('cuda:0')
+    depth_predictor = DPTForDepthEstimation.from_pretrained(model_name, torch_dtype=torch_dtype)
+    depth_predictor = depth_predictor.to(device)
 
     if not os.path.exists('./third_party/remover_fast.pth'):
         model_file_url = hf_hub_url(repo_id='Geonmo/remover_fast', filename='remover_fast.pth')
         cached_download(model_file_url, cache_dir='./third_party', force_filename='remover_fast.pth')
-    remover = Remover(fast=True, jit=False, device='cuda:0', ckpt='./third_party/remover_fast.pth')
+    remover = Remover(fast=True, jit=False, device=device, ckpt='./third_party/remover_fast.pth')
 
-    sr_model = CustomRealESRGAN('cuda:0', scale=2)
+    sr_model = CustomRealESRGAN(device, scale=2)
     sr_model.load_weights('./third_party/RealESRGAN_x2.pth', download=True)
 
     dataset = datasets.load_dataset("FredZhang7/stable-diffusion-prompts-2.47M")
@@ -361,28 +366,31 @@ def build_models(args):
                   'remover': remover,
                   'sr_model': sr_model,
                   'prompt_candidates': prompts,
+                  'device': device,
+                  'torch_dtype': torch_dtype,
                   }
     return model_dict
 
 
 def predict_compodiff(image, text_input, negative_text, cfg_image_scale, cfg_text_scale, mask, random_seed):
+    device = model_dict['device']
     text_token_dict = model_dict['clip_tokenizer'](text=text_input, return_tensors='pt', padding='max_length', truncation=True)
-    text_tokens, text_attention_mask = text_token_dict['input_ids'].to('cuda:0'), text_token_dict['attention_mask'].to('cuda:0')
+    text_tokens, text_attention_mask = text_token_dict['input_ids'].to(device), text_token_dict['attention_mask'].to(device)
 
     negative_text_token_dict = model_dict['clip_tokenizer'](text=negative_text, return_tensors='pt', padding='max_length', truncation=True)
-    negative_text_tokens, negative_text_attention_mask = negative_text_token_dict['input_ids'].to('cuda:0'), text_token_dict['attention_mask'].to('cuda:0')
+    negative_text_tokens, negative_text_attention_mask = negative_text_token_dict['input_ids'].to(device), text_token_dict['attention_mask'].to(device)
 
     with torch.no_grad():
         if image is None:
-            image_cond = torch.zeros([1,1,768]).to('cuda:0')
-            mask = torch.tensor(np.zeros([64, 64], dtype='float32')).to('cuda:0').unsqueeze(0)
+            image_cond = torch.zeros([1,1,768]).to(device)
+            mask = torch.tensor(np.zeros([64, 64], dtype='float32')).to(device).unsqueeze(0)
         else:
             image_source = image.resize((512, 512))
-            image_source = model_dict['clip_preprocess'](image_source, return_tensors='pt')['pixel_values'].to('cuda:0')
+            image_source = model_dict['clip_preprocess'](image_source, return_tensors='pt')['pixel_values'].to(device)
             mask = mask.resize((512, 512))
             mask = model_dict['clip_preprocess'](mask, do_normalize=False, return_tensors='pt')['pixel_values']
             mask = mask[:,:1,:,:]
-            mask = (mask > 0.5).float().to('cuda:0')
+            mask = (mask > 0.5).float().to(device)
             image_source = image_source * (1 - mask)
             image_cond = model_dict['clip_model'].encode_images(image_source)
             mask = transforms.Resize([64, 64])(mask)[:,0,:,:]
@@ -396,7 +404,9 @@ def predict_compodiff(image, text_input, negative_text, cfg_image_scale, cfg_tex
 
 
 def generate_depth_map(image, height, width):
-    depth_inputs = {k: v.to('cuda:0', dtype=torch.float16) for k, v in model_dict['depth_preprocess'](images=image, return_tensors='pt').items()}
+    device = model_dict['device']
+    torch_dtype = model_dict['torch_dtype']
+    depth_inputs = {k: v.to(device, dtype=torch_dtype) for k, v in model_dict['depth_preprocess'](images=image, return_tensors='pt').items()}
     depth_map = model_dict['depth_predictor'](**depth_inputs).predicted_depth.unsqueeze(1)
     depth_min = torch.amin(depth_map, dim=[1,2,3], keepdim=True)
     depth_max = torch.amax(depth_map, dim=[1,2,3], keepdim=True)
@@ -421,6 +431,9 @@ def generate_color(image, compactness=30, n_segments=100, thresh=35, blur_kernel
 
 @torch.no_grad()
 def generate(image_source, image_reference, text_input, negative_prompt, steps, random_seed, cfg_image_scale, cfg_text_scale, cfg_image_space_scale, cfg_image_reference_mix_weight, cfg_image_source_mix_weight, mask_scale, use_edge, t2i_height, t2i_width, do_sr, mode):
+    device = model_dict['device']
+    torch_dtype = model_dict['torch_dtype']
+
     text_input = text_input.lower()
     if negative_prompt == '':
         print('running without a negative prompt')
@@ -513,10 +526,10 @@ def generate(image_source, image_reference, text_input, negative_prompt, steps, 
         # do reference first
         if image_reference is not None:
             image_cond_reference = ImageOps.exif_transpose(image_reference)
-            image_cond_reference = model_dict['clip_preprocess'](image_cond_reference, return_tensors='pt')['pixel_values'].to('cuda:0')
+            image_cond_reference = model_dict['clip_preprocess'](image_cond_reference, return_tensors='pt')['pixel_values'].to(device)
             image_cond_reference = model_dict['clip_model'].encode_images(image_cond_reference)
         else:
-            image_cond_reference = torch.zeros([1, 1, 768]).to(torch.float16).to('cuda:0')
+            image_cond_reference = torch.zeros([1, 1, 768]).to(torch_dtype).to(device)
 
         # do source or knn
         image_cond_source = None
@@ -530,14 +543,14 @@ def generate(image_source, image_reference, text_input, negative_prompt, steps, 
                     image_cond, image_cond_source = predict_compodiff(None, text_input, negative_prompt, cfg_image_scale, cfg_text_scale, mask=mask_pil, random_seed=random_seed)
             else:
                 image_cond, image_cond_source = predict_compodiff(image_source, text_input, negative_prompt, cfg_image_scale, cfg_text_scale, mask=mask_pil, random_seed=random_seed)
-            image_cond = image_cond.to(torch.float16).to('cuda:0')
-            image_cond_source = image_cond_source.to(torch.float16).to('cuda:0')
+            image_cond = image_cond.to(torch_dtype).to(device)
+            image_cond_source = image_cond_source.to(torch_dtype).to(device)
         else:
-            image_cond = torch.zeros([1, 1, 768]).to(torch.float16).to('cuda:0')
+            image_cond = torch.zeros([1, 1, 768]).to(torch_dtype).to(device)
 
         if image_cond_source is None and mode != 't2i':
             image_cond_source = image_source.resize((512, 512))
-            image_cond_source = model_dict['clip_preprocess'](image_cond_source, return_tensors='pt')['pixel_values'].to('cuda:0')
+            image_cond_source = model_dict['clip_preprocess'](image_cond_source, return_tensors='pt')['pixel_values'].to(device)
             image_cond_source = model_dict['clip_model'].encode_images(image_cond_source)
 
         if cfg_image_reference_mix_weight > 0.0 and torch.sum(image_cond_reference).item() != 0.0:
@@ -551,7 +564,7 @@ def generate(image_source, image_reference, text_input, negative_prompt, steps, 
 
         if negative_prompt != '':
             negative_image_cond, _ = predict_compodiff(None, negative_prompt, '', cfg_image_scale, cfg_text_scale, mask=mask_pil, random_seed=random_seed)
-            negative_image_cond = negative_image_cond.to(torch.float16).to('cuda:0')
+            negative_image_cond = negative_image_cond.to(torch_dtype).to(device)
         else:
             negative_image_cond = torch.zeros_like(image_cond)
 
